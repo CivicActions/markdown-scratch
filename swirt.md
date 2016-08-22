@@ -2,4 +2,4 @@
 
    [ ] like this one  
    [ ] or this one
-   [x] done!
+   [x] done!  
