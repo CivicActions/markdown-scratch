@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+
+source $(dirname $0)/notify-slack
+SLACK_CHANNEL=${SLACK_CHANNEL-'PROJECT-int'}
+SLACK_BOTNAME="prod-update"
+
+echo "Updating Production site..."
+$(dirname $0)/site-update PROJECT.prod production preserve
+
+# Cache clear after revert needed
+DRUSH="drush @PROJECT.prod"
+$DRUSH cc all
+
+MESSAGE=">:rocket: Production site updated https://PROJECT.org/ "
+notifySlack ${MESSAGE//\"/_}
+
+# Create tag.
+DATE_TAG="$(date +%Y-%m-%d-a)"
+https://git.civicactions.net/CLIENT/PROJECT/tags/new?tag_name=${DATE_TAG}&ref=production
+MESSAGE=">:squirrel: create a tag: https://git.civicactions.net/CLIENT/PROJECT/tags/new?tag_name=${DATE_TAG}&ref=production"
+notifySlack ${MESSAGE//\"/_}
+
+EXIT=$?
+echo Exit Status: $EXIT
+exit $EXIT

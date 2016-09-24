@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+echo "Updating V2 DevTest site..."
+
+$(dirname $0)/site-update PROJECT.devtest develop preserve
+
+# Run the Unexpire password script.
+echo "Running unexpire passwords"
+unexpire-qa-users.sh
+
+# Set the test user passwords.
+USERS="uadmin uauthenticated ugroupmanager1 ugroupmanager2 umember1 umember2 uorgmanager1 uorgmanager2 ugroupmanager1b ugroupmanager2b umember1b umember2b uorgmanager1b uorgmanager2b uhrmanager1b uhrmanager2b"
+DRUSH="drush @PROJECT.devtest"
+for username in $USERS; do
+  $DRUSH user-password ${username} --password=civicactions
+done
+
+# Set the qa test user passwords
+USERS="qa-admin qa-groupmanager qa-member1 qa-member2 jen_general"
+for username in $USERS; do
+  $DRUSH user-password ${username} --password='CivicActions3#'
+done
+
+EXIT=$?
+echo Exit Status: $EXIT
+exit $EXIT

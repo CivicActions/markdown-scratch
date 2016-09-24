@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+hostname
+
+[[ $1 ]] || {
+  echo "Usage: $0 commit-hash"
+  echo "Example: $0 a3a09b5"
+  exit 1
+}
+
+source $(dirname $0)/notify-slack
+
+COMMIT=$1
+
+DRUSH="drush @gn2.stable"
+PROJECT_ROOT="/var/www/stable/docroot/.."
+
+SLACK_CHANNEL=${SLACK_CHANNEL-'PROJECT-int'}
+SLACK_BOTNAME=Stable
+URI=$($DRUSH ev 'print $GLOBALS['base_url'];')
+DBNAME=$($DRUSH st --fields=db-name --field-labels=0|sed 's/ //g')
+
+cd $PROJECT_ROOT
+pwd
+echo $URI
+
+# Check we're in the right place
+[ -e "docroot" ] || {
+  echo "This doesn't look like the right directory"
+  exit 1
+}
+
+# Fix permissions issues.
+echo "Fixing file permissions"
+# Note this isn't ideal and shouldn't be needed but we're doing this for now
+# to solve a WSOD issue while we continue to investigate.
+find . ! -perm -g+r -exec chmod -v g+r {} \;
+find . -type d ! -perm -g+x -exec chmod -v g+x {} \;
+find files-private -type d -exec chmod g+rw {} \;
+find docroot/sites/default/files -type d -exec chmod g+rw {} \;
+
+find files-private ! -perm -g+r -exec chmod -v g+r {} \;
+find files-private -type d ! -perm -g+wx -exec chmod -v g+wx {} \;
+
+find docroot/sites ! -perm -g+r -exec chmod -v g+r {} \;
+find docroot/sites -type d ! -perm -g+wx -exec chmod -v g+wx {} \;
+
+
+# Update code
+git remote update
+git checkout --force ${COMMIT}
+git pull
+
+SLACK_ATTACHMENTS="[{
+\"fallback\": \"'Stable' site going down for update.\",
+\"text\": \":horse: 'Stable' site going down for update. Changing to commit ${COMMIT}\",
+\"color\": \"warning\"
+}]"
+notifySlack
+
+echo "Fixing file permissions again after git pull"
+# Note this isn't ideal and shouldn't be needed but we're doing this for now
+# to solve a WSOD issue while we continue to investigate.
+find . ! -perm -g+r -exec chmod -v g+r {} \;
+find . -type d ! -perm -g+x -exec chmod -v g+x {} \;
+find files-private -type d -exec chmod g+rw {} \;
+find docroot/sites/default/files -type d -exec chmod g+rw {} \;
+
+
+# Reload database
+MYSQL=$($DRUSH sql-connect)
+# Drop all tables.
+$MYSQL -ss -e "SELECT concat(\"SET FOREIGN_KEY_CHECKS = 0; DROP TABLE \`\", TABLE_NAME, \"\`;\") FROM information_schema.tables WHERE table_schema=\"${DBNAME}\""|$MYSQL
+# Import.
+DB_FILE="latest/daily_PROJECT_drupal.sql.gz"
+zcat $HOME/${DB_FILE} | $MYSQL
+
+# Notify slack.
+MESSAGE=":horse: <${URI}|Stable> Stable site mirrored from prod complete."
+echo $MESSAGE
+unset SLACK_ATTACHMENTS
+notifySlack $MESSAGE
+
+EXIT=$?
+echo Exit Status: $EXIT
+exit 0

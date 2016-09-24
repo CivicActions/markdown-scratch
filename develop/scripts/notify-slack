@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+# Function to send output from the commandline to Slack.
+#
+# @parameter string $MESSAGE Message to send to slack.
+notifySlack ()
+{
+  SLACK_CHANNEL=${SLACK_CHANNEL-'sandbox-group'};
+  SLACK_BOTNAME=${SLACK_BOTNAME-$(hostname -s)};
+  SLACK_BOTEMOJI=${SLACK_BOTEMOJI-':penguin:'}
+  SLACK_ATTACHMENTS=${SLACK_ATTACHMENTS-'[]'}
+
+  MESSAGE=$@;
+
+  PAYLOAD="payload={\"channel\": \"${SLACK_CHANNEL}\", \"username\": \"${SLACK_BOTNAME}\", \"text\": \"${MESSAGE}\", \"icon_emoji\": \"${SLACK_BOTEMOJI}\", \"attachments\": ${SLACK_ATTACHMENTS}}";
+  CURL_RESULT=$(curl -s -S -X POST --data-urlencode "$PAYLOAD" https://hooks.slack.com/services/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);
+
+  if [ -z "$CURL_RESULT" ] || [ "$CURL_RESULT" = "ok" ]; then
+    return 0;
+  else
+    echo "Slack error: ${CURL_RESULT}"
+    echo "payload: ${PAYLOAD}"
+    return 1;
+  fi
+}
+

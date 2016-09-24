@@ -1,0 +1,153 @@
+#!/usr/bin/env bash
+hostname
+
+[[ $1 ]] || {
+  echo "Usage: site-update [drush site-alias] [git branch] [preserve|nobackup|destroy]"
+  echo "Example: site-update PROJECT.dev develop destroy"
+  exit 1
+}
+
+source $(dirname $0)/notify-slack
+
+SITE=$1
+DRUSH="drush @${SITE}"
+PROJECT_ROOT="$($DRUSH dd)/.."
+[ "$?" = "1" ] && PROJECT_ROOT="/var/www/${SITE}/docroot/.."
+
+SLACK_CHANNEL=${SLACK_CHANNEL-'PROJECT-int'}
+SLACK_BOTNAME=${SITE}
+URI=$($DRUSH ev 'print $GLOBALS['base_url'];')
+BRANCH=${2-'develop'}
+DB_PLAN=${3-'preserve'}
+DBNAME=$($DRUSH st --fields=db-name --field-labels=0|sed 's/ //g')
+
+cd $PROJECT_ROOT
+pwd
+echo $URI
+
+# Check we're in the right place
+[ -e "docroot" ] || {
+  echo "This doesn't look like the right directory"
+  exit 1
+}
+
+# Fix permissions issues.
+echo "Fixing file permissions"
+# Note this isn't ideal and shouldn't be needed but we're doing this for now
+# to solve a WSOD issue while we continue to investigate.
+find . ! -perm -g+r -exec chmod -v g+r {} \;
+find . -type d ! -perm -g+x -exec chmod -v g+x {} \;
+find files-private -type d -exec chmod g+rw {} \;
+find docroot/sites/default/files -type d -exec chmod g+rw {} \;
+
+find files-private ! -perm -g+r -exec chmod -v g+r {} \;
+find files-private -type d ! -perm -g+wx -exec chmod -v g+wx {} \;
+
+find docroot/sites ! -perm -g+r -exec chmod -v g+r {} \;
+find docroot/sites -type d ! -perm -g+wx -exec chmod -v g+wx {} \;
+
+
+# Backup database
+if [ "$DB_PLAN" != "nobackup" ];then
+  BACKUP_DIR=$HOME/backups
+  if [ ! -d $BACKUP_DIR ]; then
+    mkdir $BACKUP_DIR
+  fi
+  DATE_TIME="$(date +%Y%m%d-%H%M)"
+  BACKUP_FILE=${DBNAME}_${DATE_TIME}.sql.gz
+  echo "Saving mysql snapshot to ${BACKUP_DIR}/${BACKUP_FILE}"
+  mysqldump ${DBNAME} | gzip -c > "${BACKUP_DIR}/${BACKUP_FILE}"
+fi
+
+# Update code
+HEAD=$(git rev-parse --short HEAD)
+git remote update
+commits="$(git log --format='%<(7,trunc)%aN' HEAD..origin/${BRANCH}|tr '\n' ' ')"
+git checkout --force ${BRANCH}
+git pull
+if [ "$commits" ];then
+  ORIGIN=$(git rev-parse --short origin/${BRANCH})
+  COMPARE_LINK="https://git.civicactions.net/CLIENT/PROJECT/compare/${HEAD}...${ORIGIN}"
+  echo $commits;
+else
+  MESSAGE="Already at tip of ${BRANCH}. Fixed file permissions. Aborting update."
+  echo $MESSAGE
+  notifySlack $MESSAGE
+  exit 0;
+fi
+
+SLACK_ATTACHMENTS="[{
+\"fallback\": \"${SITE} site going down for update.\",
+\"text\": \"updating to tip of ${BRANCH}: (git log ${HEAD}..${ORIGIN}) by ${commits} <${COMPARE_LINK}|Review in Gitlab> Database plan: ${DB_PLAN}\",
+\"color\": \"warning\"
+}]"
+
+# If tag, notify of tag info.
+if [ "$TAG_MSG" ]; then
+  MESSAGE=">:rocket: ${SITE} set to new tag: ${TAG} (previous tag: ${LAST_TAG})\\n> ${TAG_MSG}"
+  notifySlack ${MESSAGE//\"/_}
+else
+  notifySlack
+fi
+
+echo "Fixing file permissions again after git pull"
+# Note this isn't ideal and shouldn't be needed but we're doing this for now
+# to solve a WSOD issue while we continue to investigate.
+find . ! -perm -g+r -exec chmod -v g+r {} \;
+find . -type d ! -perm -g+x -exec chmod -v g+x {} \;
+find files-private -type d -exec chmod g+rw {} \;
+find docroot/sites/default/files -type d -exec chmod g+rw {} \;
+
+
+# Reload database
+if [ "$DB_PLAN" = "destroy" ];then
+  MYSQL=$($DRUSH sql-connect)
+  # Drop all tables.
+  $MYSQL -ss -e "SELECT concat(\"SET FOREIGN_KEY_CHECKS = 0; DROP TABLE \`\", TABLE_NAME, \"\`;\") FROM information_schema.tables WHERE table_schema=\"${DBNAME}\""|$MYSQL
+  # Import.
+  DB_FILE="latest/devtest_drupal.sql.gz"
+  if [ "$(hostname -s)" != "v2-dev" ]; then
+    rsync -v dev:${DB_FILE} $HOME/${DB_FILE}
+  fi
+  zcat $HOME/${DB_FILE} | $MYSQL
+fi
+
+# Reload Config (Feature revert, updb).
+source ${PROJECT_ROOT}/bin/reload-config-inc
+
+# Enable cdn_bypass for servers.
+## Turned off for now:
+#  $DRUSH en -y cdn_bypass
+
+# Slack attachment with links.
+LINKS=":zap:<$($DRUSH uli --browser=0 qa-groupmanager)|groupmanager> :zap:<$($DRUSH uli --browser=0 qa-admin)|admin> :zap:<$($DRUSH uli --browser=0 qa-member1)|member1> :zap:<$($DRUSH uli --browser=0 qa-member2)|member2>"
+SLACK_ATTACHMENTS="[{
+\"fallback\": \"${SITE} site ready for review: ${URI}\",
+\"text\": \"<${URI}|${SITE}> QA one-time login links: ${LINKS}\",
+\"color\": \"good\"
+}]"
+notifySlack
+
+# Check features status
+feature_list="$(COLUMNS=120 $DRUSH fl)"
+echo "${feature_list}"
+problem_count=$(echo "${feature_list}"|grep -v solr_search|grep -c '\(Overridden\|Needs\)')
+problem_lines=$(echo "${feature_list}"|grep '\(Overridden\|Needs\)')
+if [ "$problem_count" -ge 1 ]; then
+  SLACK_ATTACHMENTS="[{
+  \"fallback\": \"${SITE} site has ${problem_count} feature problems: ${URI}\",
+  \"text\": \":charlie-mad: <${URI}|${SITE}> ${problem_count} Features are Overridden and/or in Need of Review: \\n${problem_lines} :bangbang:\",
+  \"color\": \"danger\"
+}]"
+  unset MESSAGE
+  notifySlack
+else
+  MESSAGE=":charlie-happy: <${URI}|${SITE}> Features are okay"
+  echo $MESSAGE
+  unset SLACK_ATTACHMENTS
+  notifySlack $MESSAGE
+fi
+
+EXIT=$?
+echo Exit Status: $EXIT
+exit 0

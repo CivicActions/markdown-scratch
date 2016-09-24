@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+
+source $(dirname $0)/notify-slack
+
+
+# Notify Slack.
+MESSAGE="
+  QA one-time links:
+  :zap: qa-groupmanager ~ http://example.com/foo/bar
+  :zap: qa-member1 ~ http://example.com/foo/bar
+  :zap: qa-member2 ~ http://example.com/foo/bar
+  :zap: qa-admin ~ http://example.com/foo/bar
+"
+MESSAGE="Testing..."
+SLACK_CHANNEL='it_is'
+SLACK_ATTACHMENTS="[{
+  \"fallback\": \"Site ready for review.\",
+  \"text\": \"text\",
+  \"pretext\": \"Optional text\",
+  \"color\": \"good\",
+  \"fields\": [
+  {
+    \"title\": \"Required Field Title\",
+    \"value\": \" markup \\n <http://www.google.com|google> \",
+    \"short\": true
+  },
+  {
+    \"title\": \"Required Field Title\",
+    \"value\": \" markup \\n <http://www.google.com|so much for markdown> \",
+    \"short\": true
+  },
+  {
+    \"title\": \"Required Field Title\",
+    \"value\": \" markup \\n <http://www.google.com> \",
+    \"short\": true
+  }
+  ]
+}]"
+
+notifySlack $MESSAGE
+
+# Return 0 for Jenkins success.
+exit 0
