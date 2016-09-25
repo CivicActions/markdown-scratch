@@ -1,10 +1,18 @@
 # Code Submission Process
 
+**IMPORTANT:**
+- Copy this into your `PROJECT/docs/` and replace all occurances of `CLIENT` and `PROJECT` as needed for your implementation. Some additional customization may be required.
+- Slack integration, scripts like prod-update, and maintenance windows may vary per client, also.
+
 Table of Contents
 =================
 
 * [Prerequisites](#prerequisites)
 * [Initial Git Setup](#initial-git-setup)
+  * [Fork the repository](#fork-the-repository)
+  * [Clone your forked repository](#clone-your-forked-repository)
+  * [Specify the upstream repository that you forked](#specify-the-upstream-repository-that-you-forked)
+  * [Verify your remotes](#verify-your-remotes)
 * [Git Workflow](#git-workflow)
 * [Code submission: Feature branches](#code-submission-feature-branches)
   * [Code submission: flow chart](#code-submission-flow-chart)
@@ -13,10 +21,6 @@ Table of Contents
 * [Updating the Stage server](#updating-the-stage-server)
 * [Updating the Production Server](#updating-the-production-server)
 
-**IMPORTANT:**
-- Copy this into your `PROJECT/docs/` and replace all occurances of `CLIENT` and `PROJECT` as needed for your implementation.
-- Slack integration, scripts like prod-update, and maintenance windows may vary per client, also.
-
 ## Prerequisites
 - Working sandbox with Git installed and current code base
 - Engineer Git account on git.civicactions.net
@@ -24,43 +28,48 @@ Table of Contents
 ## Initial Git Setup
 The following steps only need to be run once to setup your git environment.
 
-1. **Clone the repository** (we generally call name this `~/workspace/PROJECT` for co-working consistency, but you can name it as you like):
+### Fork the repository
+
+This creates a personal "origin" to which you can push commits and then submit *pull requests* to the project owner. To create a fork, navigate to the repository you want to make changes to and click the '**Fork**' button.
+
+### Clone your forked repository
+
+At CivicActions it is customary to place projects under a `~/workspace/` directory for co-working consistency (e.g., `~/workspace/PROJECT`) but you can name it as you like:
+```bash
+$ cd ~/workspace
+# Replace GITLAB_USERNAME to match your gitlab (or git) username in this next command
+$ git clone git@git.civicactions.net:GITLAB_USERNAME/PROJECT.git
 ```
-cd ~/workspace
-git clone git@git.civicactions.net:CLIENT/PROJECT.git PROJECT
+
+### Specify the `upstream` repository that you forked
+```bash
+$ cd ~/workspace/PROJECT
+$ git remote add upstream git@git.civicactions.net:CLIENT/PROJECT.git
 ```
-2. **Fork the repository:**
-- Go to https://git.civicactions.net/CLIENT/PROJECT and click the 'Fork' button.
-3. **Setup your own remotes** so that you can specify a remote by name. Do this on your current local copy of the PROJECT repo:
-```
-cd ~/workspace/PROJECT
-git remote rename origin prime
-# Replace GITLAB_USERNAME to match your gitlab username in this next command
-git remote add myfork git@git.civicactions.net:GITLAB_USERNAME/PROJECT.git
-```
-4. **Disable pushing to prime:**
-```
-git remote set-url --push prime no-pushing
-```
-5. ***Verify your remotes.*** `prime` and `myfork` should be listed as remotes.
-```
-git remote -v
+
+### Verify your remotes
+```bash
+$ git remote -v
+origin    https://git.civicactions.net:GITLAB_USERNAME/PROJECT.git (fetch)
+origin    https://git.civicactions.net:GITLAB_USERNAME/PROJECT.git (push)
+upstream  https://git.civicactions.net:CLIENT/PROJECT.git (fetch)
+upstream  https://git.civicactions.net:CLIENT/PROJECT.git (push)
 ```
 
 ## Git Workflow
 Here is a summary of the approach:
 
-The *prime/develop* branch is the main code base. This branch is used to update the Dev server each time the branch is updated. The Dev server is subject to periodic automated testing to ensure that changes pushed to Dev do not cause our standard tests to fail.
+The *upstream/develop* branch is the main code base. This branch is used to update the Dev server each time the branch is updated. The Dev server is subject to periodic automated testing to ensure that changes pushed to Dev do not cause our standard tests to fail.
 
-When we have a coding task, we create a new local branch of *prime/develop* and give it the name of the ticket we are working on. We then push that branch to our own repo (*myfork*) located on git.civications.net. From that branch (on git.civications.net), we submit a request to merge the branch with *develop* using the gitlab interface. Once that branch passes all the tests, code review, and QA, it is merged into *develop*. And the Dev server is updated (using a command from the RROJECT-int Slack channel).
+When we have a coding task, we update our fork from *upstream/develop*, create a branch and give it the name of the ticket we are working on. Periodically, or when the code is ready for review and possible integration, we push that branch to our own repo (*origin/my_ticket*) located on git.civications.net. From that branch (on git.civications.net), we submit a request to merge the branch with *upstream/develop* using the gitlab interface. Once that branch passes all the tests, code review, and QA, it is merged into *upstream/develop*. And the Dev server is updated (using a command from the RROJECT-int Slack channel).
 
-When we are ready to push *prime/develop* to Stage (for testing) and Prod (the live server), we create a new branch from *develop* and name it the next version iteration, (e.g. **v2.18.0**). Hotfixes (fixes introduced out of cycle, during a sprint) are indicated by being given a subversion number, (e.g. **v2.18.1**).
+When we are ready to push *upstream/develop* to Stage (for testing by the Product Owner) and Prod (the live server), we create a new branch from *upstream/develop* and name it the next version iteration, (e.g. **v2.18.0**). Hotfixes (fixes introduced out of cycle, during a sprint) are indicated by being given a subversion number, (e.g. **v2.18.1**).
 
 This enables us to test the exact same code on Stage that we will push to Prod. And it’s the exact code that passed tests on Dev prior to being branched for live testing on Stage. 
 
 The next sections provide detail on:
 - how code is checked out from *develop*,
-- a new feature branch created in *myfork*,
+- a new feature branch created in *origin*,
 - that feature branch is tested and then merged back into *develop*,
 - how a “snapshot” is made of *develop* and installed on Stage for live testing,
 * and then finally that “snapshot” is installed on the Production server.
@@ -71,10 +80,10 @@ The next sections provide detail on:
 If a developer wants to do work on a ticket RD-1234 which requires a new chicken dance feature, the git process this developer will go through might look something like this:
 
 1. **Open ticket.** At the beginning of a ticket, Engineer opens ticket RD-1234 and assigns it to themself
-2. **Update develop branch.** The engineer updates their local *develop* branch with the latest code from *prime/develop*. 
+2. **Update develop branch.** The engineer updates their local *develop* branch with the latest code from *upstream/develop*. 
 ```
 git checkout develop
-git pull --rebase prime develop
+git pull --rebase upstream develop
 ```
 3. **Create new feature branch.** Engineer creates a new feature branch to work in using the ticket ID as the branch name.
 ```
@@ -83,15 +92,15 @@ git checkout -b RD-1234-chicken-dance
 4. **Commit work.** At this point the developer will do his/her work and create multiple commits in their feature branch. 
   1. Commits are made as small as possible
   2. Each commit message contains the ticket ID and describes the work being done
-5. **Rebase from prime/develop.** Once the work is done, they will push their work to their fork repository. Before pushing a branch to a remote repo, it’s a good idea to rebase the feature branch before pushing to the remote repository.
+5. **Rebase from upstream/develop.** Once the work is done, they will push their work to their fork repository. Before pushing a branch to a remote repo, it’s a good idea to rebase the feature branch before pushing to the remote repository.
 ```
-git pull --rebase prime develop
+git pull --rebase upstream develop
 ```
 6. **Push to your remote repository.**
 ```
-git push myfork rd-1234-chicken-dance
+git push origin rd-1234-chicken-dance
 ```
-7. **Create Merge Request (MR).** After the branch has been pushed to *myfork* a merge request should be created against *prime/develop*. This is accomplished by submitting a GitLab merge request from your own repo, to merge your new branch into *prime/develop*
+7. **Create Merge Request (MR).** After the branch has been pushed to *origin* a merge request should be created against *upstream/develop*. This is accomplished by submitting a GitLab merge request from your own repo, to merge your new branch into *upstream/develop*
   1. Note the merge request in the original ticket and provide a link to the ticket in the merge request description. Set the ticket status to Code Review and remove your name from the ticket.
 8. **Jenkins / Behat testing.** New branch is built and tested against the current devtest database by the Jenkins server at https://ci.civicactions.net
   1. If branch fails test or rebase is needed, MR is closed, and ticket returned to Engineer. Ticket status is move back to To Do, and comments are added to the let the engineer know what happened.
